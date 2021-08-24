@@ -1,0 +1,134 @@
+//Elise Grosjean
+//snapshots
+//uh.txt vitesse a approcher
+
+load "iovtk"
+load "lapack"
+load "gmsh"
+int[int] Order = [1];
+string DataName = "Velocity";
+real H1=1;
+real H0=0.5;
+int Inlet=10;
+int ns=1;
+
+//mesh Th2=gmshload("marche.msh");
+//mesh Th2=gmshload("test_maillage_grossier.msh");
+//mesh Th2=vtkload("test_maillage_grossier.vtk");
+
+border a(t=1,0){x=0;y=0.5+0.5*t;label=10;}; // mesh
+border b(t=0,1){x=1*t;y=0.5;label=20;};
+border c(t=1,0){x=1 ;y=0.5*t;label=20;};
+border d(t=0,1){x=1+4*t;y=0;label=20;};
+border e(t=0,1){x=5 ;y=t;label=30;};
+border h(t=1,0){x=5*t;y=1;label=40;};
+
+
+real k=0.7;
+
+
+
+mesh Th2 = buildmesh( a(k*12) + b(k*25) + c(k*12) + d(k*85) + e(k*20) + h(k*110)); // uniforme pour domaine 20
+//mesh Th2=buildmesh( a(k*12) + b(k*45) + c(k*42) + d(k*125) + e(k*25) + h(k*110)); // raffi pour domaine 20
+plot(Th2,wait=1);
+/*fespace Pl(Th,P0);
+Pl h = hTriangle;
+cout << "size of mesh 1 = " << h[].max << endl;
+*/
+
+fespace Pl2(Th2,P0);
+Pl2 h2 = hTriangle;
+cout << "size of mesh 2 = " << h2[].max << endl;
+
+
+macro Gradient(u) [dx(u), dy(u)] //
+macro Divergence(ux, uy) (dx(ux) + dy(uy)) //
+macro UgradV(ux,uy,vx,vy) [ [ux,uy]'*[dx(vx),dy(vx)] , [ux,uy]'*[dx(vy),dy(vy)] ]// EOM
+
+
+int i,j;
+
+real Re=52,nu=1./Re;
+
+//Function inlet
+func uIn = 4./H0/H0*(H1-y)*(y-H1+H0);
+
+//Vh[int] [usnsh,vsnsh](ns); //ns Vecteurs vitesse [u1,u2]
+
+
+real arrns = 1e-9;
+
+//cout<<"Re fin = "<<Re<<endl;  
+
+fespace Vh2(Th2,[P2,P2]);
+fespace Ph2(Th2,P1);
+Vh2[int] [usnshh,vsnshh](ns); //ns Vecteurs vitesse [u1,u2]
+//Re=30;nu=1./Re;
+Vh2  [ux2, uy2], [vx2, vy2], [ux12, uy12], [dux2, duy2];
+Ph2 p2, q2, dp2;
+
+macro nsSteady2() {
+ int n;
+ real err=0;
+ S2;
+ LinNS2;
+/* Newton Loop  */
+
+ for(n=0; n< 15; n++) {
+   LinNS2;
+   dux2[] = ux12[] - ux2[];
+   duy2[] = uy12[] - uy2[];
+   err = sqrt(int2d(Th2)(Gradient(dux2)'*Gradient(dux2)+Gradient(duy2)'*Gradient(duy2))) /
+     sqrt(int2d(Th2)(Gradient(ux2)'*Gradient(ux2) + Gradient(uy2)'*Gradient(uy2)));
+   ux2[] = ux12[];
+   uy2[] = uy12[];
+   cout << err << " / " << arrns << endl;
+   cout.flush;
+   if(err < arrns) break;
+ }
+ /* Newton loop has not converged */
+ if(err > arrns) {
+   cout << "NS Warning : non convergence : err = " << err << " / eps = " << arrns << endl;
+ }
+
+} //EOF
+
+
+//Problem
+problem S2 ([ux2, uy2, p2],[vx2, vy2, q2])
+	= int2d(Th2)(nu * (Gradient(ux2)' * Gradient(vx2)
+		+ Gradient(uy2)' * Gradient(vy2))
+		- p2 * Divergence(vx2, vy2)
+		- Divergence(ux2, uy2) * q2)
+	+ on(Inlet, ux2=uIn, uy2=0.)
+	+ on(20,40, ux2=0., uy2=0.);
+
+problem LinNS2([ux12,uy12,dp2],[vx2,vy2,q2]) =
+     int2d(Th2)(nu*(Gradient(ux12)'*Gradient(vx2)
+               +   Gradient(uy12)'*Gradient(vy2))
+	       + UgradV(ux12,uy12, ux2, uy2)'*[vx2,vy2]
+	       + UgradV(ux2,uy2,ux12,uy12)'*[vx2,vy2]
+	       - Divergence(ux12,uy12)*q2 - Divergence(vx2,vy2)*dp2)
+     -int2d(Th2)(UgradV(ux2,uy2, ux2, uy2)'*[vx2,vy2])
+     +on(Inlet, ux12=uIn, uy12=0.)
+     +on(20,40, ux12=0.,uy12=0.);
+
+
+
+for (j=0;j<1;j++){
+	nsSteady2;
+	S2;
+	LinNS2;
+	plot(wait=true,cmm="[uh,vh]"+j,value=1,fill=1,[ux2,uy2]);
+	[usnshh[j],vsnshh[j]]=[ux2,uy2];
+}
+
+////OFFLINE////////
+
+///********************* LECTURE DES VITESSES *******************///
+
+//plot(coef=0.2,wait=true,[usnsh[i],vsnsh[i]],cmm=i ,value=1,fill=1);//,ps="solfinal.ps");
+//savevtk("Ltotuex_"+0+".vtu", Th, [usnsh[i],vsnsh[i]], dataname=DataName, order=Order);
+//savevtk("Ltotuapp_"+0+".vtu", Th2, [usnshh[i],vsnshh[i]], dataname=DataName, order=Order);
+savevtk("Ltotuex_"+7+".vtu", Th2, [usnshh[i],vsnshh[i]], dataname=DataName, order=Order);
+cout<<" Re "<<Re<<endl;

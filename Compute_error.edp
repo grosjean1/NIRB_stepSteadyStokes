@@ -1,0 +1,52 @@
+load "iovtk"
+load "lapack"
+load "gmsh"
+real[int][int] data;
+mesh Th2=vtkload("Ltotuex_"+0+".vtk",fields=data);//gmshload("test_maillage_grossier0.msh");
+Th2=trunc(Th2,1); // pour reconstruit le maillage
+macro Gradient(u) [dx(u), dy(u)] //
+
+fespace Vh2(Th2,[P1,P1]);
+fespace Mh2(Th2,[P1,P1,P1]);
+Vh2 [uex0,vex0];
+Mh2 [u1,v1,w1];
+u1[]=data[0];
+[uex0,vex0]=[u1,v1];
+plot([uex0,vex0],wait=1);
+
+real errH1,errL2;
+
+
+for(int i=7;i<8;i++){
+	mesh Th=vtkload("Ltotuex_"+i+".vtk",fields=data);
+	Th=trunc(Th,1); // pour reconstruit le maillage
+
+	fespace Mh(Th,[P1,P1,P1]);
+	fespace Vh(Th,[P1,P1]);
+	
+	Mh [u,v,w];
+	u[]=data[0];
+	
+	Vh [u2,v2];
+	[u2,v2]=[u,v]; 
+	plot([u2,v2],wait=1);
+	
+	Vh [uex,vex];
+	
+	//matrix B = interpolate(Vh2, Vh);
+	//cout<<"ici "<<endl;
+	[uex,vex]=[uex0,vex0];
+//	[vex]=[vex0];
+//	uex[]=B*uex0[];//[uex0,vex0];
+	cout<<"ici"<<endl;
+	plot(uex,wait=1);
+	uex[]-=u2[];
+	errH1=sqrt(int2d(Th)(Gradient(uex)'*Gradient(uex)+Gradient(vex)'*Gradient(vex)))/sqrt(int2d(Th2)(Gradient(uex0)'*Gradient(uex0)+Gradient(vex0)'*Gradient(vex0)));
+	errL2=sqrt(int2d(Th)(square(uex)+square(vex)))/sqrt(int2d(Th2)(square(uex0)+square(vex0)));
+	int nv = Mh.ndof;
+	cout<<"  *** err  *** "<< i <<" H1 "<<errH1<< " "<<errL2<<endl;
+	//plot(u,wait=1);
+	plot([u,v],wait=1);
+
+}
+
